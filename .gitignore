@@ -1,0 +1,9 @@
+build/
+cytraceback.egg-info/
+cytraceback/__pycache__/
+cytraceback/cytraceback.cpp
+cytraceback/cytraceback.cpython-*
+__pycache__/
+example/build/
+example/cymod.c
+example/cymod.cpython-36m-darwin.so
