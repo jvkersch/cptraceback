@@ -11,7 +11,7 @@ class TestPrintToStderr(unittest.TestCase):
 
     def test_example(self):
         with capture_output(STDERR) as redir:
-            pymod = import_example_module()
+            pymod = import_example_module('python_calling_cython')
             pymod.run()  # invokes print_tb
 
         parsed_tb = map(parse_tb_entry, redir.output.splitlines())

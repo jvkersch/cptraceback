@@ -2,6 +2,7 @@
 from __future__ import division, print_function
 
 import contextlib
+import importlib
 import os
 import sys
 
@@ -9,12 +10,13 @@ import cytraceback
 from .redir import Redirector, STDOUT, STDERR  # noqa
 
 
-def import_example_module():
-    mod_path = os.path.dirname(cytraceback.__file__)
+def import_example_module(folder):
+    base_path = os.path.dirname(os.path.dirname(cytraceback.__file__))
+    mod_path = os.path.join(base_path, "examples", folder)
     try:
         sys.path.append(mod_path)
-        from example import pymod
-        return pymod
+        mod = importlib.import_module("example")
+        return mod
     except ImportError as e:
         # TODO slightly more useful message here...
         sys.stderr.write("Could not import example module.\n")

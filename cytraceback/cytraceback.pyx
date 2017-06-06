@@ -1,9 +1,3 @@
-from cython.operator cimport dereference as deref
-from libcpp.vector cimport vector
-from libcpp.string cimport string
-from libc.stdint cimport uint64_t
-
-
 cdef extern from "backtrace.h":
     cppclass Traceback:
         Traceback()

@@ -8,7 +8,8 @@ setup(
         Extension(
             'cytraceback.cytraceback',
             sources=['cytraceback/cytraceback.pyx',
-                     'cytraceback/backtrace.cc'],
+                     'cytraceback/backtrace.cc',
+                     'cytraceback/cbacktrace.cc'],
             language="c++")
     ]
 )
