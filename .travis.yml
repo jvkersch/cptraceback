@@ -1,0 +1,10 @@
+language: python
+python:
+  - "3.6"
+install:
+  - sudo apt-get install libunwind-setjmp0-dev
+  - pip install -e .
+  - pip install cython  # for tests
+  - cd examples/python_calling_cython && python setup.py build_ext -i && cd ../..
+script:
+  - python -m unittest discover -v .
