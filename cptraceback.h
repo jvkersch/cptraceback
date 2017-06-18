@@ -1,13 +1,12 @@
 #ifndef MY_BACKTRACE_H
 #define MY_BACKTRACE_H
 #include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
 
 #include <Python.h>
 #include <frameobject.h>
 
-#define UNW_LOCAL_ONLY
-#include <libunwind.h>
-#undef UNW_LOCAL_ONLY
 
 #ifdef __cplusplus
 extern "C" {
@@ -15,7 +14,7 @@ extern "C" {
 
 /* Keep everything on the stack to avoid mallocing and freeing. All strings are
    char arrays of this length. */
-#define BUF_LEN 256
+#define BUF_LEN 1024
 
 /* Forward declarations */
 struct c_frame;
@@ -35,8 +34,8 @@ struct py_frame
 
 struct c_frame
 {
-    unw_word_t pc;
-    unw_word_t offset;
+    uint64_t pc;
+    uint64_t offset;
     char funcname[BUF_LEN];
     struct py_frame *pyframe;
 };
@@ -48,16 +47,95 @@ struct c_frame
 #define TRUNCATE(arr) \
     S(arr, -1, 0); S(arr, -2, '.'); S(arr, -3, '.'); S(arr, -4, '.');
 
-struct c_stack_ctx
-{
-    unw_cursor_t cursor;
-    unw_context_t context;
-};
-
 struct py_stack_ctx
 {
     PyThreadState *tstate;
     PyFrameObject *frame;
+};
+
+
+#ifdef _MSC_VER
+
+/* Windows-specific frame walking API */
+
+#include <Windows.h>
+#include <Dbghelp.h>
+
+#define MAX_FRAMES 1024
+
+struct c_stack_ctx
+{
+    void *frames[MAX_FRAMES];
+    USHORT nFramesCaptured;
+    USHORT currentFrame;
+    HANDLE process;
+};
+
+static inline
+void init_stack_ctx(struct c_stack_ctx *ctx)
+{
+    USHORT nFramesCaptured = CaptureStackBackTrace(
+        0, MAX_FRAMES, ctx->frames, NULL);
+    ctx->nFramesCaptured = nFramesCaptured;
+    ctx->currentFrame = 0;
+
+    HANDLE process = GetCurrentProcess();
+    SymInitialize(process, NULL, TRUE);
+    ctx->process = process;
+}
+
+static inline
+int get_next_frame(struct c_stack_ctx *ctx, struct c_frame *frame)
+{
+    if (ctx->currentFrame >= ctx->nFramesCaptured)
+        return -1;
+
+    char buffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR)];
+    PSYMBOL_INFO pSymbol = (PSYMBOL_INFO)buffer;
+    pSymbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+    pSymbol->MaxNameLen = MAX_SYM_NAME;
+
+    IMAGEHLP_LINE64 line;
+    line.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
+
+    DWORD64 address = (DWORD64)ctx->frames[ctx->currentFrame];
+    DWORD disp = 0;
+
+    frame->pyframe = NULL;
+    if (SymFromAddr(ctx->process, address, NULL, pSymbol)) {
+        if (SymGetLineFromAddr64(ctx->process, address, &disp, &line)) {
+            frame->pc = pSymbol->Address;
+            frame->offset = line.LineNumber;
+            strncpy(frame->funcname, pSymbol->Name, BUF_LEN);
+            TRUNCATE(frame->funcname);
+        } else {
+            frame->pc = address;
+            frame->offset = 0;
+            strcpy(frame->funcname, "no debug info");
+        }
+    } else {
+        /* TODO do a better job of identifying error */
+        frame->pc = address;
+        frame->offset = 0;
+        strcpy(frame->funcname, "invalid address");
+    }
+
+    ctx->currentFrame++;
+    return 1;
+}
+
+#else
+
+/* Posix frame-walking API (based on libunwind) */
+
+#define UNW_LOCAL_ONLY
+#include <libunwind.h>
+#undef UNW_LOCAL_ONLY
+
+struct c_stack_ctx
+{
+    unw_cursor_t cursor;
+    unw_context_t context;
 };
 
 static inline
@@ -100,8 +178,6 @@ int get_next_frame(struct c_stack_ctx *ctx, struct c_frame *frame)
                           sizeof(frame->funcname), &offset) != 0)
         return -1;
 
-    /* FIXME: need a test for long function names */
-
     frame->pc = pc;
     frame->offset = offset;
     frame->pyframe = NULL;
@@ -110,6 +186,8 @@ int get_next_frame(struct c_stack_ctx *ctx, struct c_frame *frame)
 
     return 1;
 }
+
+#endif /* _MSC_VER */
 
 static inline char*
 _decode(PyObject* obj)
