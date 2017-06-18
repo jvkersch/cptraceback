@@ -1,13 +1,20 @@
 #ifndef MY_BACKTRACE_H
 #define MY_BACKTRACE_H
 #include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
 
 #include <Python.h>
 #include <frameobject.h>
 
+#ifdef _MSC_VER
+#include <Windows.h>
+#include <Dbghelp.h>
+#else
 #define UNW_LOCAL_ONLY
 #include <libunwind.h>
 #undef UNW_LOCAL_ONLY
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,8 +42,8 @@ struct py_frame
 
 struct c_frame
 {
-    unw_word_t pc;
-    unw_word_t offset;
+    uint64_t pc;
+    uint64_t offset;
     char funcname[BUF_LEN];
     struct py_frame *pyframe;
 };
@@ -48,11 +55,21 @@ struct c_frame
 #define TRUNCATE(arr) \
     S(arr, -1, 0); S(arr, -2, '.'); S(arr, -3, '.'); S(arr, -4, '.');
 
+#ifdef _MSC_VER
+struct c_stack_ctx
+{
+	void *frames[1024];
+	USHORT nFramesCaptured;
+	USHORT currentFrame;
+	HANDLE process;
+};
+#else
 struct c_stack_ctx
 {
     unw_cursor_t cursor;
     unw_context_t context;
 };
+#endif
 
 struct py_stack_ctx
 {
@@ -60,6 +77,21 @@ struct py_stack_ctx
     PyFrameObject *frame;
 };
 
+#ifdef _MSC_VER
+static inline
+void init_stack_ctx(struct c_stack_ctx *ctx)
+{
+	USHORT nFramesCaptured = CaptureStackBackTrace(
+		0, 1024, ctx->frames, NULL
+	);
+	ctx->nFramesCaptured = nFramesCaptured;
+	ctx->currentFrame = 0;
+
+	HANDLE process = GetCurrentProcess();
+	SymInitialize(process, NULL, TRUE);
+	ctx->process = process;
+}
+#else
 static inline
 void init_stack_ctx(struct c_stack_ctx *ctx)
 {
@@ -69,6 +101,7 @@ void init_stack_ctx(struct c_stack_ctx *ctx)
     unw_getcontext(&(ctx->context));
     unw_init_local(&(ctx->cursor), &(ctx->context));
 }
+#endif
 
 static inline
 int init_py_stack_ctx(struct py_stack_ctx *ctx)
@@ -84,6 +117,48 @@ int init_py_stack_ctx(struct py_stack_ctx *ctx)
     return 0;
 }
 
+#ifdef _MSC_VER
+static inline
+int get_next_frame(struct c_stack_ctx *ctx, struct c_frame *frame)
+{
+	if (ctx->currentFrame >= ctx->nFramesCaptured)
+		return -1;
+
+	char buffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR)];
+	PSYMBOL_INFO pSymbol = (PSYMBOL_INFO)buffer;
+	pSymbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+	pSymbol->MaxNameLen = MAX_SYM_NAME;
+
+	IMAGEHLP_LINE64 line;
+	line.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
+
+	DWORD64 address = (DWORD64)ctx->frames[ctx->currentFrame];
+	DWORD disp = 0;
+
+	frame->pyframe = NULL;
+	if (SymFromAddr(ctx->process, address, NULL, pSymbol)) {
+		if (SymGetLineFromAddr64(ctx->process, address, &disp, &line)) {
+			frame->pc = pSymbol->Address;
+			frame->offset = line.LineNumber;
+			strncpy(frame->funcname, pSymbol->Name, BUF_LEN);
+			TRUNCATE(frame->funcname);
+		} else {
+			frame->pc = address;
+			frame->offset = 0;
+			strcpy(frame->funcname, "no debug info");
+		}
+	} else {
+		//DWORD error = GetLastError();
+	    //fprintf(stderr, "SymFromAddr returned an error: %d\n", error);
+		frame->pc = address;
+		frame->offset = 0;
+		strcpy(frame->funcname, "invalid address");
+	}
+
+	ctx->currentFrame++;
+	return 1;
+}
+#else
 static inline
 int get_next_frame(struct c_stack_ctx *ctx, struct c_frame *frame)
 {
@@ -110,6 +185,7 @@ int get_next_frame(struct c_stack_ctx *ctx, struct c_frame *frame)
 
     return 1;
 }
+#endif
 
 static inline char*
 _decode(PyObject* obj)
