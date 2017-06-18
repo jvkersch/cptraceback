@@ -1,12 +1,15 @@
 CPTraceback
 ===========
 
+[![Build Status](https://travis-ci.org/jvkersch/cptraceback.svg?branch=master)](https://travis-ci.org/jvkersch/cptraceback)
+
 CPTraceback is a package to print mixed Python/C stack traces from any point in
 Python or C program.
 
 It has no external dependencies, and comes as a single header file with a tiny
-C wrapper for ease of use. Work is underway to make CPTraceback allocate no
-memory on the heap, so that it can safely be used inside a signal handler.
+Python wrapper (written in C) for ease of use. Work is underway to make
+CPTraceback allocate no memory on the heap, so that it can safely be used
+inside a signal handler.
 
 _This package only works reliably on Linux/Mac OS with Python 3.6_. There is
 some support for Windows, but it is experimental. Supporting other Python
@@ -16,7 +19,7 @@ points is relevant to you.
 Usage
 -----
 
-Clone this repository, then run `pip install .` to build and install the
+Clone this repository, then run `pip install -e .` to build and install the
 module. At the point where you want to generate a traceback, import the module
 and call `print_tb`:
 ```python
