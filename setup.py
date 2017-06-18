@@ -4,9 +4,14 @@ from setuptools import setup
 from distutils.extension import Extension
 
 
-if platform.system().lower() == 'windows':
+PLATFORM = platform.system().lower()
+if PLATFORM == 'windows':
     extra_compile_args = ['-Zi', '/EHsc']
     extra_link_args = ['/DEBUG', 'dbghelp.lib']
+elif PLATFORM == 'linux':
+    print("LINUX")
+    extra_compile_args = ['-g']
+    extra_link_args = ['-lunwind']
 else:
     extra_compile_args = ['-g']
     extra_link_args = []
